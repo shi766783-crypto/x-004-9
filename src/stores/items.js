@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { itemRepo } from '@/services/db'
 import { uid } from '@/utils/id'
 import { todayStr } from '@/utils/date'
+import { useConsumableStore } from './consumables'
 
 export const useItemStore = defineStore('items', {
   state: () => ({
@@ -26,6 +27,8 @@ export const useItemStore = defineStore('items', {
     removeItem(id) {
       this.items = this.items.filter((i) => i.id !== id)
       itemRepo.set(this.items)
+      // 关联耗材解除绑定而非删除，避免丢失更换提醒
+      useConsumableStore().detachItem(id)
     },
     // 维护/更换类记录完成后，刷新物品的"上次保养日期"
     applyMaintenance(id, date) {

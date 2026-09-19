@@ -8,6 +8,7 @@ const KEYS = {
   records: 'hmm.records',
   technicians: 'hmm.technicians',
   reviews: 'hmm.reviews',
+  consumables: 'hmm.consumables',
   user: 'hmm.user'
 }
 
@@ -29,6 +30,11 @@ export const technicianRepo = {
 export const reviewRepo = {
   get: () => load(KEYS.reviews, []),
   set: (list) => save(KEYS.reviews, list)
+}
+
+export const consumableRepo = {
+  get: () => load(KEYS.consumables, []),
+  set: (list) => save(KEYS.consumables, list)
 }
 
 export const userRepo = {

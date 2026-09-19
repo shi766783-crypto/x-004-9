@@ -3,22 +3,47 @@ import { ref, computed } from 'vue'
 import { useItemStore } from '@/stores/items'
 import { useRecordStore } from '@/stores/records'
 import { useTechnicianStore } from '@/stores/technicians'
-import { getUrgency } from '@/utils/date'
+import { useConsumableStore } from '@/stores/consumables'
+import { getUrgency, getConsumableUrgency } from '@/utils/date'
+import { buildReminders } from '@/utils/reminders'
 import { fmtMoney } from '@/utils/format'
 import ReminderList from '@/components/reminder/ReminderList.vue'
 import RecordForm from '@/components/record/RecordForm.vue'
+import ReplaceForm from '@/components/consumable/ReplaceForm.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
 const itemStore = useItemStore()
 const recordStore = useRecordStore()
 const technicianStore = useTechnicianStore()
+const consumableStore = useConsumableStore()
 
 const showRecord = ref(false)
+const showReplace = ref(false)
 const presetItemId = ref('')
+const replacingId = ref('')
 
-const overdueCount = computed(() => itemStore.items.filter((i) => getUrgency(i) === 'overdue').length)
-const dueSoonCount = computed(() => itemStore.items.filter((i) => getUrgency(i) === 'dueSoon').length)
+const itemOverdue = computed(() => itemStore.items.filter((i) => getUrgency(i) === 'overdue').length)
+const itemDueSoon = computed(() => itemStore.items.filter((i) => getUrgency(i) === 'dueSoon').length)
+const consumableOverdue = computed(
+  () => consumableStore.consumables.filter((c) => getConsumableUrgency(c) === 'overdue').length
+)
+const consumableDueSoon = computed(
+  () => consumableStore.consumables.filter((c) => getConsumableUrgency(c) === 'dueSoon').length
+)
+const overdueCount = computed(() => itemOverdue.value + consumableOverdue.value)
+const dueSoonCount = computed(() => itemDueSoon.value + consumableDueSoon.value)
+
+// 物品保养 + 耗材更换 统一进入提醒列表
+const reminders = computed(() =>
+  buildReminders(
+    itemStore.items,
+    consumableStore.consumables,
+    (itemId) => itemStore.itemById(itemId)?.name || ''
+  )
+)
+
+const replacingConsumable = computed(() => consumableStore.consumableById(replacingId.value))
 
 const monthCost = computed(() => {
   const now = new Date()
@@ -36,9 +61,21 @@ function openNewRecord() {
   presetItemId.value = ''
   showRecord.value = true
 }
-function onSave(payload) {
+function onSaveRecord(payload) {
   recordStore.addRecord(payload)
   showRecord.value = false
+}
+function onReminderAction(entry) {
+  if (entry.kind === 'consumable') {
+    replacingId.value = entry.refId
+    showReplace.value = true
+  } else {
+    openRecord({ id: entry.refId })
+  }
+}
+function onReplace(date) {
+  consumableStore.markReplaced(replacingId.value, date)
+  showReplace.value = false
 }
 </script>
 
@@ -58,6 +95,10 @@ function onSave(payload) {
         <div class="stat-value">{{ itemStore.items.length }}</div>
       </div>
       <div class="stat-card">
+        <div class="stat-label">耗材总数</div>
+        <div class="stat-value" style="color: #0891b2">{{ consumableStore.consumables.length }}</div>
+      </div>
+      <div class="stat-card">
         <div class="stat-label">已过期</div>
         <div class="stat-value" style="color: #dc2626">{{ overdueCount }}</div>
       </div>
@@ -72,10 +113,13 @@ function onSave(payload) {
     </section>
 
     <section class="card">
-      <h3>待保养 / 待维修提醒</h3>
-      <ReminderList v-if="itemStore.items.length" :items="itemStore.items" @maintain="openRecord" />
-      <EmptyState v-else title="还没有物品档案" desc="添加第一个物品，系统会自动为你生成保养提醒">
-        <router-link to="/items" class="btn btn-primary" style="margin-top: 12px">去添加物品</router-link>
+      <h3>待保养 / 待更换提醒</h3>
+      <ReminderList v-if="reminders.length" :entries="reminders" @action="onReminderAction" />
+      <EmptyState v-else title="还没有物品或耗材" desc="添加物品档案、登记耗材，系统会自动为你生成保养与更换提醒">
+        <div class="empty-actions">
+          <router-link to="/items" class="btn btn-primary">去添加物品</router-link>
+          <router-link to="/consumables" class="btn btn-outline">去登记耗材</router-link>
+        </div>
       </EmptyState>
     </section>
 
@@ -84,8 +128,16 @@ function onSave(payload) {
         :items="itemStore.items"
         :technicians="technicianStore.technicians"
         :preset-item-id="presetItemId"
-        @save="onSave"
+        @save="onSaveRecord"
         @cancel="showRecord = false"
+      />
+    </BaseModal>
+
+    <BaseModal v-if="showReplace && replacingConsumable" title="记录耗材更换" @close="showReplace = false">
+      <ReplaceForm
+        :consumable="replacingConsumable"
+        @save="onReplace"
+        @cancel="showReplace = false"
       />
     </BaseModal>
   </div>
@@ -118,7 +170,14 @@ function onSave(payload) {
 }
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 12px;
+}
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
 }
 </style>

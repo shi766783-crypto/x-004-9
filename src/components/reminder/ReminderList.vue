@@ -1,44 +1,16 @@
 <script setup>
 import { computed } from 'vue'
-import { categoryOf } from '@/constants'
-import {
-  daysUntilDue,
-  getUrgency,
-  nextDueDate,
-  getWarrantyStatus,
-  URGENCY_ORDER,
-  URGENCY_LABEL,
-  WARRANTY_LABEL
-} from '@/utils/date'
 
+// 条目由 utils/reminders 的 buildReminders 统一生成并排序，
+// 物品保养与耗材更换在这里无差别展示。
 const props = defineProps({
-  items: { type: Array, required: true }
+  entries: { type: Array, required: true }
 })
 
-const emit = defineEmits(['maintain'])
+const emit = defineEmits(['action'])
 
-const sorted = computed(() => {
-  return props.items
-    .map((item) => {
-      const urgency = getUrgency(item)
-      return {
-        item,
-        urgency,
-        days: daysUntilDue(item),
-        due: nextDueDate(item),
-        warranty: getWarrantyStatus(item)
-      }
-    })
-    .sort((a, b) => {
-      if (URGENCY_ORDER[a.urgency] !== URGENCY_ORDER[b.urgency]) {
-        return URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]
-      }
-      return (a.days ?? 0) - (b.days ?? 0)
-    })
-})
-
-const overdueCount = computed(() => sorted.value.filter((s) => s.urgency === 'overdue').length)
-const dueSoonCount = computed(() => sorted.value.filter((s) => s.urgency === 'dueSoon').length)
+const overdueCount = computed(() => props.entries.filter((s) => s.urgency === 'overdue').length)
+const dueSoonCount = computed(() => props.entries.filter((s) => s.urgency === 'dueSoon').length)
 </script>
 
 <template>
@@ -48,25 +20,24 @@ const dueSoonCount = computed(() => sorted.value.filter((s) => s.urgency === 'du
       <span class="chip warn">即将到期 {{ dueSoonCount }}</span>
     </div>
 
-    <div v-if="!sorted.length" class="hint">还没有物品，先添加一个档案吧。</div>
-
     <ul class="list">
-      <li v-for="s in sorted" :key="s.item.id" class="row" :class="s.urgency">
-        <span class="dot" :style="{ background: categoryOf(s.item.category).color }"></span>
+      <li v-for="s in entries" :key="s.id" class="row" :class="s.urgency">
+        <span class="dot" :style="{ background: s.color }"></span>
         <div class="main">
           <div class="name">
-            {{ s.item.name }}
-            <span class="cat">{{ categoryOf(s.item.category).label }}</span>
+            {{ s.title }}
+            <span class="cat">{{ s.tag }}</span>
+            <span v-if="s.kind === 'consumable'" class="kind">耗材</span>
           </div>
           <div class="meta">
-            <span class="urgency" :class="s.urgency">{{ URGENCY_LABEL[s.urgency] }}</span>
-            <span v-if="s.due">下次保养：{{ s.due }}</span>
-            <span v-if="s.warranty !== 'none'" class="warranty" :class="s.warranty">
-              {{ WARRANTY_LABEL[s.warranty] }}
+            <span class="urgency" :class="s.urgency">{{ s.urgencyLabel }}</span>
+            <span v-if="s.dueLabel">{{ s.dueLabel }}</span>
+            <span v-if="s.warrantyLabel" class="warranty" :class="s.warranty">
+              {{ s.warrantyLabel }}
             </span>
           </div>
         </div>
-        <button class="btn btn-sm btn-primary" @click="emit('maintain', s.item)">去保养</button>
+        <button class="btn btn-sm btn-primary" @click="emit('action', s)">{{ s.actionLabel }}</button>
       </li>
     </ul>
   </div>
@@ -90,11 +61,6 @@ const dueSoonCount = computed(() => sorted.value.filter((s) => s.urgency === 'du
 .chip.warn {
   background: #fffbeb;
   color: #d97706;
-}
-.hint {
-  color: var(--text-muted);
-  font-size: 13px;
-  padding: 12px 0;
 }
 .list {
   list-style: none;
@@ -137,6 +103,14 @@ const dueSoonCount = computed(() => sorted.value.filter((s) => s.urgency === 'du
   font-size: 12px;
   color: var(--text-muted);
   font-weight: 400;
+  margin-left: 6px;
+}
+.kind {
+  font-size: 11px;
+  color: #0891b2;
+  background: #ecfeff;
+  padding: 1px 6px;
+  border-radius: 4px;
   margin-left: 6px;
 }
 .meta {

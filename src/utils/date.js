@@ -67,6 +67,19 @@ export function daysUntilDue(item, today = todayStr()) {
   return diffDays(today, due)
 }
 
+// 计算耗材的下次更换到期日：以上次更换日期为基准。
+export function nextReplaceDate(consumable) {
+  if (!consumable.lastReplacedDate) return null
+  return addCycle(consumable.lastReplacedDate, consumable.cycleValue, consumable.cycleUnit)
+}
+
+// 耗材相对今天的剩余天数（负数 = 已过期）；从未更换过返回 null
+export function daysUntilReplace(consumable, today = todayStr()) {
+  const due = nextReplaceDate(consumable)
+  if (!due) return null
+  return diffDays(today, due)
+}
+
 export const URGENCY_ORDER = { overdue: 0, dueSoon: 1, normal: 2, none: 3 }
 
 export const URGENCY_LABEL = {
@@ -76,14 +89,23 @@ export const URGENCY_LABEL = {
   none: '未设置周期'
 }
 
-// 紧急程度判定：已过期 > 即将到期 > 正常
-export function getUrgency(item, today = todayStr(), threshold = DUE_SOON_DAYS) {
-  const due = nextDueDate(item)
+// 到期紧急程度的通用判定：以到期日为准，已过期 > 即将到期 > 正常
+function urgencyOfDue(due, today, threshold) {
   if (!due) return 'none'
   const days = diffDays(today, due)
   if (days < 0) return 'overdue'
   if (days <= threshold) return 'dueSoon'
   return 'normal'
+}
+
+// 紧急程度判定：已过期 > 即将到期 > 正常
+export function getUrgency(item, today = todayStr(), threshold = DUE_SOON_DAYS) {
+  return urgencyOfDue(nextDueDate(item), today, threshold)
+}
+
+// 耗材紧急程度判定：未登记上次更换日期视为"未设置周期"
+export function getConsumableUrgency(consumable, today = todayStr(), threshold = DUE_SOON_DAYS) {
+  return urgencyOfDue(nextReplaceDate(consumable), today, threshold)
 }
 
 // 保修状态：expired / expiringSoon / valid / none
