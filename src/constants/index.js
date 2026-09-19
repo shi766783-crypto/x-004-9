@@ -21,6 +21,9 @@ export const CYCLE_UNITS = [
   { value: 'year', label: '年' }
 ]
 
+// 耗材提醒类型标识色（提醒列表 / 卡片中与物品类别色区分）
+export const CONSUMABLE_COLOR = '#ea580c'
+
 // 图表与徽章通用配色
 export const PALETTE = [
   '#2f855a',

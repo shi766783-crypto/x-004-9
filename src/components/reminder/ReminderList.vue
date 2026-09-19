@@ -1,10 +1,14 @@
 <script setup>
 import { computed } from 'vue'
-import { categoryOf } from '@/constants'
+import { categoryOf, CONSUMABLE_COLOR } from '@/constants'
+import { useItemStore } from '@/stores/items'
 import {
   daysUntilDue,
+  daysUntilReplace,
   getUrgency,
+  getReplaceUrgency,
   nextDueDate,
+  nextReplaceDate,
   getWarrantyStatus,
   URGENCY_ORDER,
   URGENCY_LABEL,
@@ -12,23 +16,47 @@ import {
 } from '@/utils/date'
 
 const props = defineProps({
-  items: { type: Array, required: true }
+  items: { type: Array, required: true },
+  consumables: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['maintain'])
+const emit = defineEmits(['maintain', 'replace'])
 
+const itemStore = useItemStore()
+
+// 耗材的适配物品名：优先取关联物品，其次取手动填写
+function targetNameOf(c) {
+  return itemStore.itemById(c.itemId)?.name || c.targetName || ''
+}
+
+// 物品保养提醒与耗材更换提醒合并，按紧急程度（同级按剩余天数）统一排序
 const sorted = computed(() => {
-  return props.items
-    .map((item) => {
-      const urgency = getUrgency(item)
-      return {
-        item,
-        urgency,
-        days: daysUntilDue(item),
-        due: nextDueDate(item),
-        warranty: getWarrantyStatus(item)
-      }
-    })
+  const itemRows = props.items.map((item) => {
+    const urgency = getUrgency(item)
+    return {
+      key: `item-${item.id}`,
+      kind: 'item',
+      ref: item,
+      urgency,
+      days: daysUntilDue(item),
+      due: nextDueDate(item),
+      warranty: getWarrantyStatus(item)
+    }
+  })
+  const consumableRows = props.consumables.map((consumable) => {
+    const urgency = getReplaceUrgency(consumable)
+    return {
+      key: `con-${consumable.id}`,
+      kind: 'consumable',
+      ref: consumable,
+      urgency,
+      days: daysUntilReplace(consumable),
+      due: nextReplaceDate(consumable),
+      warranty: 'none'
+    }
+  })
+  return [...itemRows, ...consumableRows]
+    .filter((r) => r.urgency !== 'none')
     .sort((a, b) => {
       if (URGENCY_ORDER[a.urgency] !== URGENCY_ORDER[b.urgency]) {
         return URGENCY_ORDER[a.urgency] - URGENCY_ORDER[b.urgency]
@@ -48,25 +76,46 @@ const dueSoonCount = computed(() => sorted.value.filter((s) => s.urgency === 'du
       <span class="chip warn">即将到期 {{ dueSoonCount }}</span>
     </div>
 
-    <div v-if="!sorted.length" class="hint">还没有物品，先添加一个档案吧。</div>
+    <div v-if="!sorted.length" class="hint">暂无到期事项，一切正常。</div>
 
     <ul class="list">
-      <li v-for="s in sorted" :key="s.item.id" class="row" :class="s.urgency">
-        <span class="dot" :style="{ background: categoryOf(s.item.category).color }"></span>
+      <li v-for="s in sorted" :key="s.key" class="row" :class="s.urgency">
+        <span
+          class="dot"
+          :style="{
+            background: s.kind === 'consumable' ? CONSUMABLE_COLOR : categoryOf(s.ref.category).color
+          }"
+        ></span>
         <div class="main">
           <div class="name">
-            {{ s.item.name }}
-            <span class="cat">{{ categoryOf(s.item.category).label }}</span>
+            {{ s.ref.name }}
+            <span v-if="s.kind === 'consumable'" class="cat con-tag">耗材更换</span>
+            <span v-else class="cat">{{ categoryOf(s.ref.category).label }}保养</span>
           </div>
           <div class="meta">
             <span class="urgency" :class="s.urgency">{{ URGENCY_LABEL[s.urgency] }}</span>
-            <span v-if="s.due">下次保养：{{ s.due }}</span>
+            <span v-if="s.due">
+              {{ s.kind === 'consumable' ? '下次更换' : '下次保养' }}：{{ s.due }}
+            </span>
+            <span
+              v-if="s.kind === 'consumable'"
+              class="cat"
+            >适配：{{ targetNameOf(s.ref) || '—' }}</span>
             <span v-if="s.warranty !== 'none'" class="warranty" :class="s.warranty">
               {{ WARRANTY_LABEL[s.warranty] }}
             </span>
           </div>
         </div>
-        <button class="btn btn-sm btn-primary" @click="emit('maintain', s.item)">去保养</button>
+        <button
+          v-if="s.kind === 'consumable'"
+          class="btn btn-sm btn-primary"
+          @click="emit('replace', s.ref)"
+        >
+          去更换
+        </button>
+        <button v-else class="btn btn-sm btn-primary" @click="emit('maintain', s.ref)">
+          去保养
+        </button>
       </li>
     </ul>
   </div>
@@ -138,6 +187,9 @@ const dueSoonCount = computed(() => sorted.value.filter((s) => s.urgency === 'du
   color: var(--text-muted);
   font-weight: 400;
   margin-left: 6px;
+}
+.con-tag {
+  color: var(--consumable-color, #ea580c);
 }
 .meta {
   display: flex;

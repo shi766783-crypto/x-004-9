@@ -3,22 +3,34 @@ import { ref, computed } from 'vue'
 import { useItemStore } from '@/stores/items'
 import { useRecordStore } from '@/stores/records'
 import { useTechnicianStore } from '@/stores/technicians'
-import { getUrgency } from '@/utils/date'
+import { useConsumableStore } from '@/stores/consumables'
+import { getUrgency, getReplaceUrgency } from '@/utils/date'
 import { fmtMoney } from '@/utils/format'
 import ReminderList from '@/components/reminder/ReminderList.vue'
 import RecordForm from '@/components/record/RecordForm.vue'
+import ReplaceConsumableModal from '@/components/consumable/ReplaceConsumableModal.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
 const itemStore = useItemStore()
 const recordStore = useRecordStore()
 const technicianStore = useTechnicianStore()
+const consumableStore = useConsumableStore()
 
 const showRecord = ref(false)
 const presetItemId = ref('')
+const replacingConsumable = ref(null)
 
-const overdueCount = computed(() => itemStore.items.filter((i) => getUrgency(i) === 'overdue').length)
-const dueSoonCount = computed(() => itemStore.items.filter((i) => getUrgency(i) === 'dueSoon').length)
+const itemOverdue = computed(() => itemStore.items.filter((i) => getUrgency(i) === 'overdue').length)
+const itemDueSoon = computed(() => itemStore.items.filter((i) => getUrgency(i) === 'dueSoon').length)
+const consumableOverdue = computed(
+  () => consumableStore.consumables.filter((c) => getReplaceUrgency(c) === 'overdue').length
+)
+const consumableDueSoon = computed(
+  () => consumableStore.consumables.filter((c) => getReplaceUrgency(c) === 'dueSoon').length
+)
+const overdueCount = computed(() => itemOverdue.value + consumableOverdue.value)
+const dueSoonCount = computed(() => itemDueSoon.value + consumableDueSoon.value)
 
 const monthCost = computed(() => {
   const now = new Date()
@@ -40,6 +52,10 @@ function onSave(payload) {
   recordStore.addRecord(payload)
   showRecord.value = false
 }
+function onReplace(id, date) {
+  consumableStore.markReplaced(id, date)
+  replacingConsumable.value = null
+}
 </script>
 
 <template>
@@ -58,6 +74,12 @@ function onSave(payload) {
         <div class="stat-value">{{ itemStore.items.length }}</div>
       </div>
       <div class="stat-card">
+        <div class="stat-label">耗材总数</div>
+        <div class="stat-value" style="color: var(--consumable-color, #ea580c)">
+          {{ consumableStore.consumables.length }}
+        </div>
+      </div>
+      <div class="stat-card">
         <div class="stat-label">已过期</div>
         <div class="stat-value" style="color: #dc2626">{{ overdueCount }}</div>
       </div>
@@ -72,10 +94,19 @@ function onSave(payload) {
     </section>
 
     <section class="card">
-      <h3>待保养 / 待维修提醒</h3>
-      <ReminderList v-if="itemStore.items.length" :items="itemStore.items" @maintain="openRecord" />
-      <EmptyState v-else title="还没有物品档案" desc="添加第一个物品，系统会自动为你生成保养提醒">
-        <router-link to="/items" class="btn btn-primary" style="margin-top: 12px">去添加物品</router-link>
+      <h3>待保养 / 待更换提醒</h3>
+      <ReminderList
+        v-if="itemStore.items.length || consumableStore.consumables.length"
+        :items="itemStore.items"
+        :consumables="consumableStore.consumables"
+        @maintain="openRecord"
+        @replace="replacingConsumable = $event"
+      />
+      <EmptyState v-else title="还没有物品或耗材档案" desc="添加物品或登记耗材后，系统会自动生成保养 / 更换提醒">
+        <div class="empty-actions">
+          <router-link to="/items" class="btn btn-primary" style="margin-top: 12px">去添加物品</router-link>
+          <router-link to="/consumables" class="btn btn-outline" style="margin-top: 12px">去登记耗材</router-link>
+        </div>
       </EmptyState>
     </section>
 
@@ -88,6 +119,13 @@ function onSave(payload) {
         @cancel="showRecord = false"
       />
     </BaseModal>
+
+    <ReplaceConsumableModal
+      v-if="replacingConsumable"
+      :consumable="replacingConsumable"
+      @replace="onReplace"
+      @cancel="replacingConsumable = null"
+    />
   </div>
 </template>
 
@@ -120,5 +158,11 @@ function onSave(payload) {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
+}
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 </style>

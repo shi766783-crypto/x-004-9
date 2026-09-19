@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useItemStore } from '@/stores/items'
 import { useRecordStore } from '@/stores/records'
 import { useTechnicianStore } from '@/stores/technicians'
+import { useConsumableStore } from '@/stores/consumables'
 import { categoryOf, CYCLE_UNITS } from '@/constants'
 import {
   nextDueDate,
@@ -17,6 +18,9 @@ import { fmtMoney } from '@/utils/format'
 import ItemForm from '@/components/item/ItemForm.vue'
 import RecordForm from '@/components/record/RecordForm.vue'
 import RecordCard from '@/components/record/RecordCard.vue'
+import ConsumableCard from '@/components/consumable/ConsumableCard.vue'
+import ConsumableForm from '@/components/consumable/ConsumableForm.vue'
+import ReplaceConsumableModal from '@/components/consumable/ReplaceConsumableModal.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
@@ -25,13 +29,20 @@ const router = useRouter()
 const itemStore = useItemStore()
 const recordStore = useRecordStore()
 const technicianStore = useTechnicianStore()
+const consumableStore = useConsumableStore()
 
 const showEdit = ref(false)
 const showRecord = ref(false)
+const showConsumableForm = ref(false)
+const editingConsumable = ref(null)
+const replacingConsumable = ref(null)
 
 const item = computed(() => itemStore.itemById(route.params.id))
 const category = computed(() => (item.value ? categoryOf(item.value.category) : null))
 const records = computed(() => (item.value ? recordStore.recordsByItem(item.value.id) : []))
+const consumables = computed(() =>
+  item.value ? consumableStore.consumablesByItem(item.value.id) : []
+)
 const unitLabel = computed(() => {
   const u = CYCLE_UNITS.find((x) => x.value === item.value?.cycleUnit)
   return u ? u.label : ''
@@ -50,6 +61,31 @@ function onSaveItem(payload) {
 function onSaveRecord(payload) {
   recordStore.addRecord(payload)
   showRecord.value = false
+}
+function openAddConsumable() {
+  editingConsumable.value = null
+  showConsumableForm.value = true
+}
+function openEditConsumable(c) {
+  editingConsumable.value = c
+  showConsumableForm.value = true
+}
+function submitConsumable(payload) {
+  if (editingConsumable.value) {
+    consumableStore.updateConsumable(editingConsumable.value.id, payload)
+  } else {
+    consumableStore.addConsumable(payload)
+  }
+  editingConsumable.value = null
+  showConsumableForm.value = false
+}
+function onRemoveConsumable(c) {
+  if (!confirm(`确定删除耗材「${c.name}」吗？`)) return
+  consumableStore.removeConsumable(c.id)
+}
+function onReplaceConsumable(id, date) {
+  consumableStore.markReplaced(id, date)
+  replacingConsumable.value = null
 }
 function onDelete() {
   if (!confirm('确定删除该物品及其档案吗？')) return
@@ -105,6 +141,25 @@ function onDeleteRecord(record) {
     </section>
 
     <section class="card">
+      <div class="section-head">
+        <h3>关联耗材（{{ consumables.length }}）</h3>
+        <button class="btn btn-sm btn-outline" @click="openAddConsumable">+ 登记耗材</button>
+      </div>
+      <div v-if="consumables.length" class="consumable-list">
+        <ConsumableCard
+          v-for="c in consumables"
+          :key="c.id"
+          :consumable="c"
+          :item-name="item.name"
+          @edit="openEditConsumable"
+          @remove="onRemoveConsumable"
+          @replace="replacingConsumable = $event"
+        />
+      </div>
+      <EmptyState v-else title="暂无关联耗材" desc="为该物品登记滤芯、电池等耗材，到期会自动提醒更换" />
+    </section>
+
+    <section class="card">
       <h3>保养 / 维修记录（{{ records.length }}）</h3>
       <div class="record-list">
         <RecordCard
@@ -132,6 +187,27 @@ function onDeleteRecord(record) {
         @cancel="showRecord = false"
       />
     </BaseModal>
+
+    <BaseModal
+      :title="editingConsumable ? '编辑耗材' : '登记耗材'"
+      @close="showConsumableForm = false"
+    >
+      <ConsumableForm
+        v-if="showConsumableForm"
+        :consumable="editingConsumable"
+        :items="itemStore.items"
+        :preset-item-id="item.id"
+        @save="submitConsumable"
+        @cancel="showConsumableForm = false"
+      />
+    </BaseModal>
+
+    <ReplaceConsumableModal
+      v-if="replacingConsumable"
+      :consumable="replacingConsumable"
+      @replace="onReplaceConsumable"
+      @cancel="replacingConsumable = null"
+    />
   </div>
 
   <EmptyState v-else title="物品不存在" desc="该物品可能已被删除">
@@ -247,6 +323,20 @@ function onDeleteRecord(record) {
   color: #16a34a;
 }
 .record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.section-head h3 {
+  margin-bottom: 0;
+}
+.consumable-list {
   display: flex;
   flex-direction: column;
   gap: 10px;

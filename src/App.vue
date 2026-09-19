@@ -13,6 +13,7 @@ const userStore = useUserStore()
 const navs = [
   { to: '/', label: '首页' },
   { to: '/items', label: '物品' },
+  { to: '/consumables', label: '耗材' },
   { to: '/records', label: '记录' },
   { to: '/technicians', label: '师傅' },
   { to: '/dashboard', label: '看板' },
